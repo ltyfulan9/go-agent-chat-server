@@ -1,0 +1,26 @@
+# Go build output
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test/cache
+*.test
+*.out
+coverage.out
+
+# IDE
+.vscode/
+.idea/
+
+# Env/config secrets
+.env
+*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker / database local data
+data/
+tmp/
