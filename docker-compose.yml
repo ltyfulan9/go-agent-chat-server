@@ -1,0 +1,141 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: go-chat-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: go_chat
+      MYSQL_USER: gochat
+      MYSQL_PASSWORD: gochat
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-ugochat", "-pgochat"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: go-chat-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: go-chat-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+
+  app:
+    build:
+      context: .
+      args:
+        GO_VERSION: "1.23"
+    container_name: go-chat-server
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+      - "6060:6060"
+    environment:
+      SERVER_ADDR: ":8080"
+      DEBUG_ADDR: ":6060"
+      MYSQL_DSN: "gochat:gochat@tcp(mysql:3306)/go_chat?charset=utf8mb4&parseTime=True&loc=Local"
+      REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: ""
+      REDIS_DB: "0"
+      MAX_CONCURRENT_LLM: "2"
+      USER_LLM_RATE_LIMIT: "10"
+      USER_LLM_RATE_WINDOW_SECONDS: "60"
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      DEFAULT_MODEL: "qwen2.5:3b"
+      JWT_SECRET: "replace-with-a-random-secret"
+      JWT_EXPIRE_HOURS: "24"
+      MQ_ENABLED: "true"
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
+      RABBITMQ_EXCHANGE: "chat.events"
+      RABBITMQ_ROUTING_KEY: "chat.event"
+      RABBITMQ_QUEUE: "chat.events.log"
+      RABBITMQ_BINDING_KEY: "chat.*"
+      ASYNC_QUEUE_ENABLED: "true"
+      RABBITMQ_TASK_EXCHANGE: "chat.tasks"
+      RABBITMQ_TASK_ROUTING_KEY: "chat.task.created"
+      RABBITMQ_TASK_QUEUE: "chat.tasks.worker"
+      RABBITMQ_TASK_BINDING_KEY: "chat.task.*"
+      WORKER_CONCURRENCY: "2"
+      CHAT_JOB_MAX_RETRY: "3"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  worker:
+    build:
+      context: .
+      args:
+        GO_VERSION: "1.23"
+    container_name: go-chat-worker
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    entrypoint: ["/app/worker"]
+    environment:
+      DEBUG_ADDR: ":6061"
+      MYSQL_DSN: "gochat:gochat@tcp(mysql:3306)/go_chat?charset=utf8mb4&parseTime=True&loc=Local"
+      REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: ""
+      REDIS_DB: "0"
+      MAX_CONCURRENT_LLM: "2"
+      USER_LLM_RATE_LIMIT: "1000"
+      USER_LLM_RATE_WINDOW_SECONDS: "60"
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      DEFAULT_MODEL: "qwen2.5:3b"
+      MQ_ENABLED: "true"
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
+      RABBITMQ_EXCHANGE: "chat.events"
+      RABBITMQ_ROUTING_KEY: "chat.event"
+      RABBITMQ_QUEUE: "chat.events.log"
+      RABBITMQ_BINDING_KEY: "chat.*"
+      ASYNC_QUEUE_ENABLED: "true"
+      RABBITMQ_TASK_EXCHANGE: "chat.tasks"
+      RABBITMQ_TASK_ROUTING_KEY: "chat.task.created"
+      RABBITMQ_TASK_QUEUE: "chat.tasks.worker"
+      RABBITMQ_TASK_BINDING_KEY: "chat.task.*"
+      WORKER_CONCURRENCY: "2"
+      CHAT_JOB_MAX_RETRY: "3"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  mysql_data:
+  redis_data:
